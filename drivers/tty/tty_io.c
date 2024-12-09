@@ -2642,12 +2642,14 @@ static int tiocspgrp(struct tty_struct *tty, struct tty_struct *real_tty, pid_t 
 		return -EINVAL;
 
 	spin_lock_irq(&real_tty->ctrl_lock);
+
 	if (!current->signal->tty ||
 	    (current->signal->tty != real_tty) ||
 	    (real_tty->session != task_session(current))) {
 		retval = -ENOTTY;
 		goto out_unlock_ctrl;
 	}
+
 	rcu_read_lock();
 	pgrp = find_vpid(pgrp_nr);
 	retval = -ESRCH;
