@@ -1502,7 +1502,7 @@ int blkdev_get(struct block_device *bdev, fmode_t mode, void *holder)
 	}
 
 	if (res)
-		bdput(bdev);
+		bdput(whole);
 
 	return res;
 }
