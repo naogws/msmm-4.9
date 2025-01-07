@@ -25,6 +25,7 @@
 #include <dsp/q6afe-v2.h>
 #include <dsp/audio_cal_utils.h>
 #include <ipc/apr.h>
+#include <dsp/q6common.h>
 #include "adsp_err.h"
 
 #define TIMEOUT_MS 1000
@@ -737,7 +738,12 @@ int adm_programable_channel_mixer(int port_id, int copp_idx, int session_id,
 	index = index + ch_mixer->input_channels[channel_index];
 	ret = adm_populate_channel_weight(&adm_pspd_params[index],
 					ch_mixer, channel_index);
+#ifndef OPLUS_ARCH_EXTENDS
+//Nan.Zhong@PSW.MM.AudioDriver.Codec, 2019/07/05, Modify for aec problem
 	if (ret) {
+#else /* OPLUS_ARCH_EXTENDS */
+    if (!ret) {
+#endif /* OPLUS_ARCH_EXTENDS */
 		pr_err("%s: fail to get channel weight with error %d\n",
 			__func__, ret);
 		goto fail_cmd;
@@ -2435,6 +2441,20 @@ int adm_arrange_mch_ep2_map(struct adm_cmd_device_open_v6 *open_v6,
 	return rc;
 }
 
+#ifdef OPLUS_FEATURE_KTV
+/*Haoyun.luo@MULTIMEDIA.AUDIODRIVER.FEATURE, 2021/04/06,
+*Add for KTV 2.0 not support sample_rate issue.
+*/
+#define AUDIO_TOPOLOGY_KTV    0x10001080
+#endif /* OPLUS_FEATURE_KTV */
+
+#ifdef OPLUS_ARCH_EXTENDS
+/*Jianfeng.Qiu@PSW.MM.AudioDriver.Platform.1859584, 2019/02/27,
+ *Add for fix lvimfq not support sample_rate issue.
+ */
+#define VOICE_TOPOLOGY_LVIMFQ_TX_DM    0x1000BFF5
+#endif /* OPLUS_ARCH_EXTENDS */
+
 int adm_open(int port_id, int path, int rate, int channel_mode, int topology,
 	     int perf_mode, uint16_t bit_width, int app_type, int acdb_id)
 {
@@ -2495,6 +2515,30 @@ int adm_open(int port_id, int path, int rate, int channel_mode, int topology,
 	    (topology == VPM_TX_DM_FLUENCE_COPP_TOPOLOGY) ||
 	    (topology == VPM_TX_DM_RFECNS_COPP_TOPOLOGY))
 		rate = 16000;
+
+#ifdef OPLUS_FEATURE_KTV
+/*Haoyun.luo@MULTIMEDIA.AUDIODRIVER.FEATURE, 2021/04/06,
+*Add for for KTV 2.0 not support sample_rate issue.
+*/
+     if ((topology == AUDIO_TOPOLOGY_KTV)
+             && (rate != ADM_CMD_COPP_OPEN_SAMPLE_RATE_48K)) {
+             pr_info("%s: Change rate %d to 48K for copp 0x%x",
+                       __func__, rate, topology);
+             rate = 48000;
+     }
+#endif /* OPLUS_FEATURE_KTV */
+
+	#ifdef OPLUS_ARCH_EXTENDS
+	/*Jianfeng.Qiu@PSW.MM.AudioDriver.Platform.1859584, 2019/02/27,
+	 *Add for fix lvimfq not support sample_rate issue.
+	 */
+	if ((topology == VOICE_TOPOLOGY_LVIMFQ_TX_DM)
+		&& (rate != ADM_CMD_COPP_OPEN_SAMPLE_RATE_48K)) {
+		pr_info("%s: Change rate %d to 48K for copp 0x%x",
+			__func__, rate, topology);
+		rate = 48000;
+	}
+	#endif /* OPLUS_ARCH_EXTENDS */
 
 	/*
 	 * Routing driver reuses the same adm for streams with the same
@@ -3624,6 +3668,55 @@ int adm_set_volume(int port_id, int copp_idx, int volume)
 fail_cmd:
 	return rc;
 }
+
+#ifdef OPLUS_FEATURE_KTV
+// Haoyun.luo@MULTIMEDIA.AUDIODRIVER.FEATURE, 2021/04/06, Add for ktv2.0
+int  adm_set_reverb_param(int port_id, int copp_idx, int32_t* params)
+{
+	struct audproc_revert_param audproc_param;
+	struct param_hdr_v3 param_hdr;
+	int rc  = 0;
+
+	pr_debug("%s, portid %d, copp idx %d\n", __func__, port_id, copp_idx);
+
+	memset(&audproc_param, 0, sizeof(audproc_param));
+	memset(&param_hdr, 0, sizeof(param_hdr));
+	param_hdr.module_id = 0x10001081;
+	param_hdr.instance_id = 0x8000;
+	param_hdr.param_id = 0x10001082;
+	param_hdr.param_size = sizeof(audproc_param);
+
+	audproc_param.mode = params[0];
+	audproc_param.volume = params[1];
+	audproc_param.peg = params[2];
+	audproc_param.pitchange = params[3];
+	audproc_param.reverbparam= params[4];
+	audproc_param.enabled= params[5];
+	audproc_param.reverved0 = params[6];
+	audproc_param.reverved1 = params[7];
+	audproc_param.reverved2 = params[8];
+	audproc_param.reverved3 = params[9];
+	audproc_param.reverved4 = params[10];
+	audproc_param.reverved5 = params[11];
+	audproc_param.reverved6 = params[12];
+	audproc_param.reverved7 = params[13];
+	audproc_param.reverved8 = params[14];
+	audproc_param.reverved9 = params[15];
+	audproc_param.reverved10 = params[16];
+	audproc_param.reverved11 = params[17];
+	audproc_param.reverved12 = params[18];
+	audproc_param.reverved13 = params[19];
+
+	rc = adm_pack_and_set_one_pp_param(port_id, copp_idx, param_hdr,
+					   (uint8_t *) &audproc_param);
+	if (rc)
+		pr_err("%s: Failed to set volume, err %d\n", __func__, rc);
+
+	return rc;
+}
+
+EXPORT_SYMBOL(adm_set_reverb_param);
+#endif /* OPLUS_FEATURE_KTV */
 
 int adm_set_softvolume(int port_id, int copp_idx,
 			struct audproc_softvolume_params *softvol_param)
