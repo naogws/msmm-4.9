@@ -32,12 +32,7 @@
 #include "dsi-panel-hx83112a-truly-singlemipi-fhd-video.dtsi"
 #include "dsi-panel-xrsmrtvwr-jdi-dual-video.dtsi"
 #include <dt-bindings/clock/mdss-10nm-pll-clk.h>
-//#ifdef OPLUS_BUG_STABILITY
-#include "dsi-panel_oppo17081samsung_ams596w401_1080_2280.dtsi"
-#include "dsi-panel_oppo18081samsung_ams641rw01_1080_2340.dtsi"
-#include "dsi-panel_oppo18041samsung_ams653tk01_1080_2340.dtsi"
 #include "dsi-panel_oppo18621dsjm_hx83112a_1080_2340_video.dtsi"
-//#endif
 
 &soc {
 	dsi_panel_pwr_supply: dsi_panel_pwr_supply {
@@ -615,31 +610,6 @@
 			};
 		};
 	};
-
-	//#ifdef OPLUS_BUG_STABILITY
-	dsi_oppo18081samsung_ams641rw01_1080_2340_cmd_display: qcom,dsi-display@20 {
-		compatible = "qcom,dsi-display";
-		label = "dsi_oppo18081samsung_ams641rw01_1080_2340_cmd_display";
-		qcom,display-type = "primary";
-
-		qcom,dsi-ctrl = <&mdss_dsi0>;
-		qcom,dsi-phy = <&mdss_dsi_phy0>;
-		clocks = <&mdss_dsi0_pll BYTECLK_MUX_0_CLK>,
-		       <&mdss_dsi0_pll PCLK_MUX_0_CLK>;
-		clock-names = "mux_byte_clk", "mux_pixel_clk";
-
-		pinctrl-names = "panel_active", "panel_suspend";
-		pinctrl-0 = <&sde_dsi_active &sde_te_active>;
-		pinctrl-1 = <&sde_dsi_suspend &sde_te_suspend>;
-		qcom,platform-te-gpio = <&tlmm 10 0>;
-		qcom,platform-reset-gpio = <&tlmm 26 0>;
-		qcom,dsi-display-active;
-
-		qcom,dsi-panel = <&dsi_oppo18081samsung_ams641rw01_1080_2340_cmd>;
-		vddio-supply = <&pm660_l8>;
-		vdda-3p3-supply = <&pm660l_l6>;
-	};
-	//#endif
 
 	dsi_sharp_1080_cmd_display: qcom,dsi-display@19 {
 		compatible = "qcom,dsi-display";
