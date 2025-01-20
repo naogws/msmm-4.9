@@ -1,3 +1,4 @@
+ifeq ($(CONFIG_OPLUS_SYSTEM_KERNEL_QCOM),)
 dts-dirs += al
 dts-dirs += altera
 dts-dirs += amd
@@ -20,6 +21,9 @@ dts-dirs += sprd
 dts-dirs += xilinx
 dts-dirs += lg
 dts-dirs += zte
+else
+dts-dirs += rmx1971
+endif # CONFIG_OPLUS_SYSTEM_KERNEL_QCOM
 
 subdir-y	:= $(dts-dirs)
 
