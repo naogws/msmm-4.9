@@ -31,7 +31,6 @@
 #include "include/msm_csiphy_5_0_1_hwreg.h"
 #include "include/msm_csiphy_10_0_0_hwreg.h"
 #include "cam_hw_ops.h"
-#include <media/adsp-shmem-device.h>
 
 #define DBG_CSIPHY 0
 #define SOF_DEBUG_ENABLE 1
@@ -198,9 +197,9 @@ static int msm_csiphy_snps_2_lane_config(
 
 	local_data_rate = csiphy_params->data_rate;
 
-	if (mode == PHY_A_MODE)
+	if (mode == TWO_LANE_PHY_A)
 		offset = 0x0;
-	else if (mode == PHY_B_MODE)
+	else if (mode == TWO_LANE_PHY_B)
 		offset = SNPS_INTERPHY_OFFSET;
 	else
 		return -EINVAL;
@@ -222,7 +221,7 @@ static int msm_csiphy_snps_2_lane_config(
 
 	csiphy_dev->snps_programmed_data_rate = csiphy_params->data_rate;
 
-	if (mode == PHY_A_MODE) {
+	if (mode == TWO_LANE_PHY_A) {
 		msm_camera_io_w(csiphy_dev->ctrl_reg->csiphy_snps_reg.
 			mipi_csiphy_sys_ctrl.data,
 			csiphybase + csiphy_dev->ctrl_reg->csiphy_snps_reg.
@@ -342,7 +341,7 @@ static int msm_csiphy_snps_lane_config(
 	 */
 
 	lane_mask = csiphy_params->lane_mask & 0x3f;
-	CDBG("%s:%d lane_mask: 0x%x, cur_snps_state = %d\n",
+	CDBG("%s:%d lane_maks: %d, cur_snps_state = %d\n",
 		__func__, __LINE__, lane_mask, csiphy_dev->snps_state);
 
 	if (lane_mask == LANE_MASK_AGGR_MODE) { /* Aggregate mdoe */
@@ -360,17 +359,14 @@ static int msm_csiphy_snps_lane_config(
 		clk_mux_reg &= ~0xff;
 		clk_mux_reg |= csiphy_params->csid_core << 4;
 		clk_mux_reg |= (uint32_t)csiphy_params->csid_core;
-	} else if ((lane_mask | LANE_MASK_PHY_A) == LANE_MASK_PHY_A) {
-		/* phy A config */
-		if (lane_mask == LANE_MASK_PHY_A)
-			num_lanes = 2;
-		else
-			num_lanes = 1;
-		mode = PHY_A_MODE;
+	} else if (lane_mask == LANE_MASK_PHY_A) { /* PHY A */
+		/* 2 lane config */
+		num_lanes = 2;
+		mode = TWO_LANE_PHY_A;
 		if (csiphy_dev->snps_state == NOT_CONFIGURED) {
-			csiphy_dev->snps_state = CONFIGURED_PHY_A_MODE;
+			csiphy_dev->snps_state = CONFIGURED_TWO_LANE_PHY_A;
 		} else if (csiphy_dev->snps_state ==
-			CONFIGURED_PHY_B_MODE) {
+			CONFIGURED_TWO_LANE_PHY_B) {
 			/* 2 lane + 2 lane config */
 			csiphy_dev->snps_state = CONFIGURED_COMBO_MODE;
 		} else {
@@ -382,17 +378,14 @@ static int msm_csiphy_snps_lane_config(
 		}
 		clk_mux_reg &= ~0xf;
 		clk_mux_reg |= (uint32_t)csiphy_params->csid_core;
-	} else if ((lane_mask | LANE_MASK_PHY_B) == LANE_MASK_PHY_B) {
-		/* phy B config */
-		if (lane_mask == LANE_MASK_PHY_B)
-			num_lanes = 2;
-		else
-			num_lanes = 1;
-		mode = PHY_B_MODE;
+	} else if (lane_mask == LANE_MASK_PHY_B) { /* PHY B */
+		/* 2 lane config */
+		num_lanes = 2;
+		mode = TWO_LANE_PHY_B;
 		if (csiphy_dev->snps_state == NOT_CONFIGURED) {
-			csiphy_dev->snps_state = CONFIGURED_PHY_B_MODE;
+			csiphy_dev->snps_state = CONFIGURED_TWO_LANE_PHY_B;
 		} else if (csiphy_dev->snps_state ==
-			CONFIGURED_PHY_A_MODE) {
+			CONFIGURED_TWO_LANE_PHY_A) {
 			/* 2 lane + 2 lane config */
 			csiphy_dev->snps_state = CONFIGURED_COMBO_MODE;
 		} else {
@@ -413,9 +406,9 @@ static int msm_csiphy_snps_lane_config(
 	/* ensure write is done */
 	mb();
 
-	if (mode == AGGREGATE_MODE || mode == PHY_A_MODE) {
+	if (mode == AGGREGATE_MODE || mode == TWO_LANE_PHY_A) {
 		ret = msm_csiphy_snps_2_lane_config(csiphy_dev,
-			csiphy_params, PHY_A_MODE, num_lanes);
+			csiphy_params, TWO_LANE_PHY_A, num_lanes);
 		if (ret < 0) {
 			pr_err("%s:%d: Error in setting lane configuration\n",
 				__func__, __LINE__);
@@ -423,9 +416,9 @@ static int msm_csiphy_snps_lane_config(
 		}
 	}
 
-	if (mode == AGGREGATE_MODE || mode == PHY_B_MODE) {
+	if (mode == AGGREGATE_MODE || mode == TWO_LANE_PHY_B) {
 		ret = msm_csiphy_snps_2_lane_config(csiphy_dev,
-			csiphy_params, PHY_B_MODE, num_lanes);
+			csiphy_params, TWO_LANE_PHY_B, num_lanes);
 		if (ret < 0) {
 			pr_err("%s:%d: Error in setting lane configuration\n",
 				__func__, __LINE__);
@@ -436,10 +429,10 @@ static int msm_csiphy_snps_lane_config(
 	snps_irq_config(csiphy_dev, csiphy_params);
 
 	value = 0x0;
-	if (mode == AGGREGATE_MODE || mode == PHY_A_MODE)
-		value |= (mask_force_mode_A & lane_mask);
-	if (mode == AGGREGATE_MODE || mode == PHY_B_MODE)
-		value |= (mask_force_mode_B & lane_mask);
+	if (mode == AGGREGATE_MODE || mode == TWO_LANE_PHY_A)
+		value |= mask_force_mode_A;
+	if (mode == AGGREGATE_MODE || mode == TWO_LANE_PHY_B)
+		value |= mask_force_mode_B;
 	msm_camera_io_w(value,
 		csiphybase + csiphy_dev->ctrl_reg->csiphy_snps_reg.
 		mipi_csiphy_force_mode.addr);
@@ -565,33 +558,33 @@ static int msm_csiphy_snps_lane_config(
 	}
 
 	value = 0x0;
-	if (mode == AGGREGATE_MODE || mode == PHY_A_MODE)
-		value |= (mask_phy_enable_A & lane_mask);
-	if (mode == AGGREGATE_MODE || mode == PHY_B_MODE)
-		value |= (mask_phy_enable_B & lane_mask);
+	if (mode == AGGREGATE_MODE || mode == TWO_LANE_PHY_A)
+		value |= mask_phy_enable_A;
+	if (mode == AGGREGATE_MODE || mode == TWO_LANE_PHY_B)
+		value |= mask_phy_enable_B;
 	msm_camera_io_w(value,
 		csiphybase + csiphy_dev->ctrl_reg->csiphy_snps_reg.
 		mipi_csiphy_enable.addr);
 
 	value = 0x0;
-	if (mode == AGGREGATE_MODE || mode == PHY_A_MODE)
+	if (mode == AGGREGATE_MODE || mode == TWO_LANE_PHY_A)
 		value |= mask_base_dir_A;
-	if (mode == AGGREGATE_MODE || mode == PHY_B_MODE)
+	if (mode == AGGREGATE_MODE || mode == TWO_LANE_PHY_B)
 		value |= mask_base_dir_B;
 	msm_camera_io_w(value,
 		csiphybase + csiphy_dev->ctrl_reg->csiphy_snps_reg.
 		mipi_csiphy_basedir.addr);
 
 	value = 0x0;
-	if (mode == AGGREGATE_MODE || mode == PHY_A_MODE)
+	if (mode == AGGREGATE_MODE || mode == TWO_LANE_PHY_A)
 		value |= mask_enable_clk_A;
-	if (mode == AGGREGATE_MODE || mode == PHY_B_MODE)
+	if (mode == AGGREGATE_MODE || mode == TWO_LANE_PHY_B)
 		value |= mask_enable_clk_B;
 	msm_camera_io_w(value,
 		csiphybase + csiphy_dev->ctrl_reg->csiphy_snps_reg.
 		mipi_csiphy_enable_clk.addr);
 
-	if (mode == PHY_A_MODE) {
+	if (mode == TWO_LANE_PHY_A) {
 		msm_camera_io_w(mask_reset_A,
 		csiphybase + csiphy_dev->ctrl_reg->csiphy_snps_reg.
 		mipi_csiphy_ctrl_1.addr);
@@ -618,7 +611,7 @@ static int msm_csiphy_snps_lane_config(
 		}
 	}
 
-	if (mode == PHY_B_MODE) {
+	if (mode == TWO_LANE_PHY_B) {
 		msm_camera_io_w(mask_reset_B,
 		csiphybase + csiphy_dev->ctrl_reg->csiphy_snps_reg.
 		mipi_csiphy_ctrl_1.addr);
@@ -2253,15 +2246,11 @@ static long msm_csiphy_subdev_ioctl(struct v4l2_subdev *sd,
 		rc = msm_csiphy_get_subdev_id(csiphy_dev, arg);
 		break;
 	case VIDIOC_MSM_CSIPHY_IO_CFG:
-		rc = 0;
-		if (adsp_shmem_get_state() == CAMERA_STATUS_END)
-			rc = msm_csiphy_cmd(csiphy_dev, arg);
+		rc = msm_csiphy_cmd(csiphy_dev, arg);
 		break;
 	case VIDIOC_MSM_CSIPHY_RELEASE:
 	case MSM_SD_SHUTDOWN:
-		rc = 0;
-		if (adsp_shmem_get_state() == CAMERA_STATUS_END)
-			rc = msm_csiphy_release(csiphy_dev, arg);
+		rc = msm_csiphy_release(csiphy_dev, arg);
 		break;
 	case MSM_SD_NOTIFY_FREEZE:
 		if (!csiphy_dev || !csiphy_dev->ctrl_reg ||

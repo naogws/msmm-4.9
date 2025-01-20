@@ -1,4 +1,4 @@
-/* Copyright (c) 2017-2018, 2020-2021 The Linux Foundation. All rights reserved.
+/* Copyright (c) 2017-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -323,7 +323,6 @@ int cam_jpeg_enc_start_hw(void *data,
 		return -EINVAL;
 	}
 
-	CAM_DBG(CAM_JPEG, "Starting JPEG ENC");
 	cam_io_w_mb(hw_info->reg_val.hw_cmd_start,
 		mem_base + hw_info->reg_offset.hw_cmd);
 
@@ -350,7 +349,7 @@ int cam_jpeg_enc_stop_hw(void *data,
 	hw_info = core_info->jpeg_enc_hw_info;
 	mem_base = soc_info->reg_map[0].mem_base;
 
-	mutex_lock(&core_info->core_mutex);
+	mutex_unlock(&core_info->core_mutex);
 	spin_lock(&jpeg_enc_dev->hw_lock);
 	if (core_info->core_state == CAM_JPEG_ENC_CORE_ABORTING) {
 		CAM_ERR(CAM_JPEG, "alrady stopping");

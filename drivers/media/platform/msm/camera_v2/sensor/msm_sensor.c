@@ -1,4 +1,4 @@
-/* Copyright (c) 2011-2019, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2011-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -17,12 +17,10 @@
 #include "msm_camera_i2c_mux.h"
 #include <linux/regulator/rpm-smd-regulator.h>
 #include <linux/regulator/consumer.h>
-#include <media/adsp-shmem-device.h>
 
 #undef CDBG
 #define CDBG(fmt, args...) pr_debug(fmt, ##args)
 
-extern struct msm_sensor_ctrl_t *g_sctrl[MAX_CAMERAS];
 static struct msm_camera_i2c_fn_t msm_sensor_cci_func_tbl;
 static struct msm_camera_i2c_fn_t msm_sensor_secure_func_tbl;
 
@@ -206,9 +204,6 @@ int msm_sensor_power_up(struct msm_sensor_ctrl_t *s_ctrl)
 					&msm_sensor_secure_func_tbl;
 			}
 		}
-#if IS_ENABLED(CONFIG_ARCH_QM215)
-		msleep(60);
-#endif
 		rc = msm_camera_power_up(power_info, s_ctrl->sensor_device_type,
 			sensor_i2c_client);
 		if (rc < 0)
@@ -262,17 +257,6 @@ int msm_sensor_match_id(struct msm_sensor_ctrl_t *s_ctrl)
 	sensor_i2c_client = s_ctrl->sensor_i2c_client;
 	slave_info = s_ctrl->sensordata->slave_info;
 	sensor_name = s_ctrl->sensordata->sensor_name;
-
-	if (adsp_shmem_is_initialized()) {
-		pr_debug("%s aDSP camera supports sensor_name:%s\n", __func__,
-			adsp_shmem_get_sensor_name());
-		if (strnstr(sensor_name, adsp_shmem_get_sensor_name(),
-			strlen(sensor_name))) {
-			pr_debug("%s ARM-side sensor matched with aDSP-side sensor:%s\n",
-				__func__, sensor_name);
-			return rc;
-		}
-	}
 
 	if (!sensor_i2c_client || !slave_info || !sensor_name) {
 		pr_err("%s:%d failed: %pK %pK %pK\n",
@@ -479,11 +463,6 @@ static int msm_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 		struct msm_camera_i2c_reg_setting conf_array;
 		struct msm_camera_i2c_reg_array *reg_setting = NULL;
 
-		if (adsp_shmem_get_state() != CAMERA_STATUS_END) {
-			mutex_unlock(s_ctrl->msm_sensor_mutex);
-			return 0;
-		}
-
 		if (s_ctrl->is_csid_tg_mode)
 			goto DONE;
 
@@ -554,115 +533,12 @@ static int msm_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 		kfree(reg_setting);
 		break;
 	}
-
-	case CFG_SET_STEREO_CFG: {
-		struct msm_sensor_ctrl_t *p_ctrl = NULL;
-		s_ctrl->peer_sensor_ctrl = NULL;
-		for (i = 0; i < MAX_CAMERAS; i++) {
-			p_ctrl = g_sctrl[i];
-			if (p_ctrl && p_ctrl->sensordata && p_ctrl != s_ctrl &&
-				!strcmp(p_ctrl->sensordata->sensor_name, s_ctrl->sensordata->sensor_name)) {
-				s_ctrl->peer_sensor_ctrl = p_ctrl;
-				s_ctrl->sensordata->cam_slave_info->is_stereo_config = 1;
-				s_ctrl->sensordata->cam_slave_info->stereo_aux = 0;
-				p_ctrl->peer_sensor_ctrl = s_ctrl;
-				p_ctrl->sensordata->cam_slave_info->is_stereo_config = 1;
-				p_ctrl->sensordata->cam_slave_info->stereo_aux = 1;
-				pr_info("stereo camera for Left: %s Right: %s\n",
-				  p_ctrl->sensordata->sensor_name,
-				  s_ctrl->sensordata->sensor_name);
-				break;
-			}
-		}
-		break;
-	}
-
-	case CFG_SET_STEREO_AEC: {
-		struct msm_camera_i2c_reg_setting32 conf_array32;
-		struct msm_camera_i2c_reg_setting conf_array;
-		struct msm_camera_i2c_reg_array *reg_setting = NULL;
-
-		if (s_ctrl->is_csid_tg_mode)
-			goto DONE;
-
-		if (s_ctrl->sensor_state != MSM_SENSOR_POWER_UP) {
-			pr_err("%s:%d failed: invalid state %d\n", __func__,
-				__LINE__, s_ctrl->sensor_state);
-			rc = -EFAULT;
-			break;
-		}
-
-		if (copy_from_user(&conf_array32,
-			(void *)compat_ptr(cdata->cfg.setting),
-			sizeof(struct msm_camera_i2c_reg_setting32))) {
-			pr_err("%s:%d failed\n", __func__, __LINE__);
-			rc = -EFAULT;
-			break;
-		}
-
-		conf_array.addr_type = conf_array32.addr_type;
-		conf_array.data_type = conf_array32.data_type;
-		conf_array.delay = conf_array32.delay;
-		conf_array.size = conf_array32.size;
-		conf_array.reg_setting = compat_ptr(conf_array32.reg_setting);
-
-		if (!conf_array.size ||
-			conf_array.size > I2C_REG_DATA_MAX) {
-			pr_err("%s:%d failed\n", __func__, __LINE__);
-			rc = -EFAULT;
-			break;
-		}
-
-		reg_setting = kzalloc(conf_array.size *
-			(sizeof(struct msm_camera_i2c_reg_array)), GFP_KERNEL);
-		if (!reg_setting) {
-			pr_err("%s:%d failed\n", __func__, __LINE__);
-			rc = -ENOMEM;
-			break;
-		}
-		if (copy_from_user(reg_setting,
-			(void *)(conf_array.reg_setting),
-			conf_array.size *
-			sizeof(struct msm_camera_i2c_reg_array))) {
-			pr_err("%s:%d failed\n", __func__, __LINE__);
-			kfree(reg_setting);
-			rc = -EFAULT;
-			break;
-		}
-
-		conf_array.reg_setting = reg_setting;
-		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->
-			i2c_write_table(s_ctrl->sensor_i2c_client,
-			&conf_array);
-
-		CDBG("peer_sensor_ctrl %p is_stereo_config %d stereo master %d",
-			s_ctrl->peer_sensor_ctrl,
-			s_ctrl->sensordata->cam_slave_info->is_stereo_config,
-			!s_ctrl->sensordata->cam_slave_info->stereo_aux);
-
-		if (s_ctrl->peer_sensor_ctrl &&
-			s_ctrl->sensordata->cam_slave_info->is_stereo_config &&
-			!s_ctrl->sensordata->cam_slave_info->stereo_aux) {
-				rc = s_ctrl->peer_sensor_ctrl->sensor_i2c_client->i2c_func_tbl->
-					i2c_write_table(s_ctrl->peer_sensor_ctrl->sensor_i2c_client,
-					&conf_array);
-		}
-
-		kfree(reg_setting);
-		break;
-	}
-
 	case CFG_SLAVE_READ_I2C: {
 		struct msm_camera_i2c_read_config read_config;
 		struct msm_camera_i2c_read_config *read_config_ptr = NULL;
 		uint16_t local_data = 0;
 		uint16_t orig_slave_addr = 0, read_slave_addr = 0;
 		uint16_t orig_addr_type = 0, read_addr_type = 0;
-
-		if (adsp_shmem_get_state() != CAMERA_STATUS_END) {
-			mutex_unlock(s_ctrl->msm_sensor_mutex);
-			return 0;
-		}
 
 		if (s_ctrl->is_csid_tg_mode)
 			goto DONE;
@@ -741,11 +617,6 @@ static int msm_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 		struct msm_camera_i2c_reg_array *reg_setting = NULL;
 		uint16_t orig_slave_addr = 0, write_slave_addr = 0;
 		uint16_t orig_addr_type = 0, write_addr_type = 0;
-
-		if (adsp_shmem_get_state() != CAMERA_STATUS_END) {
-			mutex_unlock(s_ctrl->msm_sensor_mutex);
-			return 0;
-		}
 
 		if (s_ctrl->is_csid_tg_mode)
 			goto DONE;
@@ -852,11 +723,6 @@ static int msm_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 		struct msm_camera_i2c_seq_reg_setting32 conf_array32;
 		struct msm_camera_i2c_seq_reg_setting conf_array;
 		struct msm_camera_i2c_seq_reg_array *reg_setting = NULL;
-
-		if (adsp_shmem_get_state() != CAMERA_STATUS_END) {
-			mutex_unlock(s_ctrl->msm_sensor_mutex);
-			return 0;
-		}
 
 		if (s_ctrl->is_csid_tg_mode)
 			goto DONE;
@@ -974,11 +840,6 @@ static int msm_sensor_config32(struct msm_sensor_ctrl_t *s_ctrl,
 		struct msm_camera_i2c_reg_setting32 stop_setting32;
 		struct msm_camera_i2c_reg_setting *stop_setting =
 			&s_ctrl->stop_setting;
-
-		if (adsp_shmem_get_state() != CAMERA_STATUS_END) {
-			mutex_unlock(s_ctrl->msm_sensor_mutex);
-			return 0;
-		}
 
 		if (s_ctrl->is_csid_tg_mode)
 			goto DONE;
@@ -1193,94 +1054,6 @@ int msm_sensor_config(struct msm_sensor_ctrl_t *s_ctrl, void *argp)
 			rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->
 				i2c_write_table_sync(s_ctrl->sensor_i2c_client,
 					&conf_array);
-
-		kfree(reg_setting);
-		break;
-	}
-
-	case CFG_SET_STEREO_CFG: {
-		struct msm_sensor_ctrl_t *p_ctrl = NULL;
-		s_ctrl->peer_sensor_ctrl = NULL;
-		for (i = 0; i < MAX_CAMERAS; i++) {
-			p_ctrl = g_sctrl[i];
-			if (p_ctrl && p_ctrl->sensordata && p_ctrl != s_ctrl &&
-				!strcmp(p_ctrl->sensordata->sensor_name, s_ctrl->sensordata->sensor_name)) {
-				s_ctrl->peer_sensor_ctrl = p_ctrl;
-				s_ctrl->sensordata->cam_slave_info->is_stereo_config = 1;
-				s_ctrl->sensordata->cam_slave_info->stereo_aux = 0;
-				p_ctrl->peer_sensor_ctrl = s_ctrl;
-				p_ctrl->sensordata->cam_slave_info->is_stereo_config = 1;
-				p_ctrl->sensordata->cam_slave_info->stereo_aux = 1;
-				pr_info("stereo camera for Left: %s Right: %s\n",
-				  p_ctrl->sensordata->sensor_name,
-				  s_ctrl->sensordata->sensor_name);
-				break;
-			}
-		}
-		break;
-	}
-
-	case CFG_SET_STEREO_AEC: {
-		struct msm_camera_i2c_reg_setting conf_array;
-		struct msm_camera_i2c_reg_array *reg_setting = NULL;
-
-		if (s_ctrl->is_csid_tg_mode)
-			goto DONE;
-
-		if (s_ctrl->sensor_state != MSM_SENSOR_POWER_UP) {
-			pr_err("%s:%d failed: invalid state %d\n", __func__,
-				__LINE__, s_ctrl->sensor_state);
-			rc = -EFAULT;
-			break;
-		}
-
-		if (copy_from_user(&conf_array,
-			(void *)cdata->cfg.setting,
-			sizeof(struct msm_camera_i2c_reg_setting))) {
-			pr_err("%s:%d failed\n", __func__, __LINE__);
-			rc = -EFAULT;
-			break;
-		}
-
-		if (!conf_array.size ||
-			conf_array.size > I2C_REG_DATA_MAX) {
-			pr_err("%s:%d failed\n", __func__, __LINE__);
-			rc = -EFAULT;
-			break;
-		}
-
-		reg_setting = kzalloc(conf_array.size *
-			(sizeof(struct msm_camera_i2c_reg_array)), GFP_KERNEL);
-		if (!reg_setting) {
-			pr_err("%s:%d failed\n", __func__, __LINE__);
-			rc = -ENOMEM;
-			break;
-		}
-		if (copy_from_user(reg_setting, (void *)conf_array.reg_setting,
-			conf_array.size *
-			sizeof(struct msm_camera_i2c_reg_array))) {
-			pr_err("%s:%d failed\n", __func__, __LINE__);
-			kfree(reg_setting);
-			rc = -EFAULT;
-			break;
-		}
-
-		conf_array.reg_setting = reg_setting;
-		rc = s_ctrl->sensor_i2c_client->i2c_func_tbl->
-			i2c_write_table(s_ctrl->sensor_i2c_client,
-				&conf_array);
-		CDBG("s_ctrl %p peer_sensor_ctrl %p is_stereo_config %d stereo master %d",
-			s_ctrl, s_ctrl->peer_sensor_ctrl,
-			s_ctrl->sensordata->cam_slave_info->is_stereo_config,
-			!s_ctrl->sensordata->cam_slave_info->stereo_aux);
-
-		if (s_ctrl->peer_sensor_ctrl &&
-			s_ctrl->sensordata->cam_slave_info->is_stereo_config &&
-			!s_ctrl->sensordata->cam_slave_info->stereo_aux) {
-			rc = s_ctrl->peer_sensor_ctrl->sensor_i2c_client->i2c_func_tbl->
-				i2c_write_table(s_ctrl->peer_sensor_ctrl->sensor_i2c_client,
-					&conf_array);
-		}
 
 		kfree(reg_setting);
 		break;

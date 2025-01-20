@@ -1,4 +1,4 @@
-/* Copyright (c) 2013-2018, 2020, The Linux Foundation. All rights reserved.
+/* Copyright (c) 2013-2018, The Linux Foundation. All rights reserved.
  *
  * This program is free software; you can redistribute it and/or modify
  * it under the terms of the GNU General Public License version 2 and
@@ -174,6 +174,8 @@ static int32_t msm_vfe40_init_qos_parms(struct vfe_device *vfe_dev,
 			qos_regs, qos_entries);
 		if (rc < 0) {
 			pr_err("%s: NO QOS BUS BDG info\n", __func__);
+			kfree(qos_settings);
+			kfree(qos_regs);
 		} else {
 			if (qos_parms->settings) {
 				rc = of_property_read_u32_array(of_node,
@@ -182,15 +184,20 @@ static int32_t msm_vfe40_init_qos_parms(struct vfe_device *vfe_dev,
 				if (rc < 0) {
 					pr_err("%s: NO QOS settings\n",
 						__func__);
+					kfree(qos_settings);
+					kfree(qos_regs);
 				} else {
 					for (i = 0; i < qos_entries; i++)
 						msm_camera_io_w(qos_settings[i],
 							vfebase + qos_regs[i]);
+					kfree(qos_settings);
+					kfree(qos_regs);
 				}
+			} else {
+				kfree(qos_settings);
+				kfree(qos_regs);
 			}
 		}
-		kfree(qos_settings);
-		kfree(qos_regs);
 	}
 	rc = of_property_read_u32(of_node, ds_parms->entries,
 		&ds_entries);
@@ -211,6 +218,8 @@ static int32_t msm_vfe40_init_qos_parms(struct vfe_device *vfe_dev,
 			ds_regs, ds_entries);
 		if (rc < 0) {
 			pr_err("%s: NO D/S register info\n", __func__);
+			kfree(ds_settings);
+			kfree(ds_regs);
 		} else {
 			if (ds_parms->settings) {
 				rc = of_property_read_u32_array(of_node,
@@ -219,15 +228,20 @@ static int32_t msm_vfe40_init_qos_parms(struct vfe_device *vfe_dev,
 				if (rc < 0) {
 					pr_err("%s: NO D/S settings\n",
 						__func__);
-				} else {
+					kfree(ds_settings);
+					kfree(ds_regs);
+	} else {
 					for (i = 0; i < ds_entries; i++)
 						msm_camera_io_w(ds_settings[i],
 							vfebase + ds_regs[i]);
+						kfree(ds_regs);
+						kfree(ds_settings);
 				}
+			} else {
+				kfree(ds_regs);
+				kfree(ds_settings);
 			}
 		}
-		kfree(ds_settings);
-		kfree(ds_regs);
 	}
 	return 0;
 }
@@ -290,9 +304,6 @@ static void msm_vfe40_init_hardware_reg(struct vfe_device *vfe_dev)
 	struct msm_vfe_hw_init_parms qos_parms;
 	struct msm_vfe_hw_init_parms vbif_parms;
 	struct msm_vfe_hw_init_parms ds_parms;
-
-	if (vfe_used_by_adsp(vfe_dev))
-		return;
 
 	qos_parms.entries = "qos-entries";
 	qos_parms.regs = "qos-regs";
@@ -735,13 +746,13 @@ static void msm_vfe40_process_epoch_irq(struct vfe_device *vfe_dev,
 		return;
 
 	if (irq_status0 & BIT(2)) {
+		msm_isp_notify(vfe_dev, ISP_EVENT_SOF, VFE_PIX_0, ts);
 		ISP_DBG("%s: EPOCH0 IRQ\n", __func__);
 		msm_isp_process_reg_upd_epoch_irq(vfe_dev, VFE_PIX_0,
 					MSM_ISP_COMP_IRQ_EPOCH, ts);
 		msm_isp_process_stats_reg_upd_epoch_irq(vfe_dev,
 					MSM_ISP_COMP_IRQ_EPOCH);
 		msm_isp_update_error_frame_count(vfe_dev);
-		msm_isp_notify(vfe_dev, ISP_EVENT_SOF, VFE_PIX_0, ts);
 		if (vfe_dev->axi_data.src_info[VFE_PIX_0].raw_stream_count > 0
 			&& vfe_dev->axi_data.src_info[VFE_PIX_0].
 			stream_count == 0) {
@@ -764,9 +775,6 @@ static long msm_vfe40_reset_hardware(struct vfe_device *vfe_dev,
 	spin_lock_irqsave(&vfe_dev->reset_completion_lock, flags);
 	init_completion(&vfe_dev->reset_complete);
 	spin_unlock_irqrestore(&vfe_dev->reset_completion_lock, flags);
-
-	if (vfe_used_by_adsp(vfe_dev))
-		return msecs_to_jiffies(50);
 
 	if (first_start) {
 		msm_camera_io_w_mb(0x1FF, vfe_dev->vfe_base + 0xC);
@@ -1782,9 +1790,6 @@ static int msm_vfe40_axi_halt(struct vfe_device *vfe_dev,
 	enum msm_vfe_input_src i;
 	struct msm_isp_timestamp ts;
 	unsigned long flags;
-
-	if (vfe_used_by_adsp(vfe_dev))
-		return msecs_to_jiffies(50);
 
 	/* Keep only halt and restart mask */
 	msm_vfe40_config_irq(vfe_dev, (1 << 31), (1 << 8),
