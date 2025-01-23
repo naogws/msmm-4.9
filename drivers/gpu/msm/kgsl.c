@@ -2318,14 +2318,6 @@ static int kgsl_setup_dmabuf_useraddr(struct kgsl_device *device,
 			return -EFAULT;
 		}
 
-		/*
-		 * Take a refcount because dma_buf_put() decrements the
-		 * refcount
-		 */
-		get_file(vma->vm_file);
-
-		dmabuf = vma->vm_file->private_data;
-
 		/* Look for the fd that matches this vma file */
 		fd = iterate_fd(current->files, 0, match_file, vma->vm_file);
 		if (fd) {
